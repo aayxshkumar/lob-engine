@@ -26,6 +26,7 @@ enum class Result : std::uint8_t {
     DuplicateId,
     UnknownId,
     InvalidQty,
+    PriceOutOfRange,
 };
 
 }  // namespace lob

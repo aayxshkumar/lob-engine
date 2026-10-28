@@ -22,7 +22,7 @@ if(LOB_SANITIZERS)
   add_link_options(-fsanitize=${LOB_SANITIZERS})
 endif()
 
-add_library(lob src/order_book.cpp)
+add_library(lob src/order_book.cpp src/map_order_book.cpp)
 target_include_directories(lob PUBLIC include)
 target_compile_options(lob PRIVATE -Wall -Wextra -Wpedantic -Werror)
 

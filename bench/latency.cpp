@@ -1,4 +1,5 @@
-// Per-operation latency percentiles over the synthetic workload.
+// Per-operation latency percentiles over the synthetic workload, for the
+// current OrderBook and the v0 MapOrderBook baseline.
 //
 //   ./lob_latency [ops]          default 1,000,000
 //
@@ -12,6 +13,7 @@
 #include <cstdlib>
 #include <string>
 
+#include "lob/map_order_book.hpp"
 #include "lob/order_book.hpp"
 #include "workload.hpp"
 
@@ -33,13 +35,17 @@ std::uint32_t pct(std::vector<std::uint32_t>& v, double p) {
     return v[k];
 }
 
+std::uint32_t to_ns(Clock::duration d) {
+    return static_cast<std::uint32_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(d).count());
+}
+
 // Clock overhead, measured the same way as the real samples.
 std::uint32_t clock_overhead_ns() {
     std::vector<std::uint32_t> v(100'000);
     for (auto& x : v) {
         const auto t0 = Clock::now();
         const auto t1 = Clock::now();
-        x = static_cast<std::uint32_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(t1 - t0).count());
+        x = to_ns(t1 - t0);
     }
     return pct(v, 0.5);
 }
@@ -52,25 +58,19 @@ std::uint32_t clock_resolution_ns() {
         const auto t0 = Clock::now();
         auto t1 = Clock::now();
         while (t1 == t0) t1 = Clock::now();
-        best = std::min(best, static_cast<std::uint32_t>(
-                                  std::chrono::duration_cast<std::chrono::nanoseconds>(t1 - t0).count()));
+        best = std::min(best, to_ns(t1 - t0));
     }
     return best;
 }
 
-}  // namespace
-
-int main(int argc, char** argv) {
-    WorkloadConfig cfg;
-    if (argc > 1) cfg.ops = std::stoul(argv[1]);
-    const auto ops = make_workload(cfg);
-
-    OrderBook book{cfg.ops};
+template <typename B>
+void run(const char* label, const std::vector<Op>& ops, std::size_t capacity) {
+    B book{capacity};
     std::vector<Trade> trades;
     trades.reserve(1024);
 
     Samples add{"add_limit", {}}, cancel{"cancel", {}}, market{"add_market", {}};
-    for (auto* s : {&add, &cancel, &market}) s->ns.reserve(cfg.ops);
+    for (auto* s : {&add, &cancel, &market}) s->ns.reserve(ops.size());
 
     for (const Op& op : ops) {
         const auto t0 = Clock::now();
@@ -80,27 +80,39 @@ int main(int argc, char** argv) {
             case OpType::Market: book.add_market(op.id, op.side, op.qty, trades); break;
         }
         const auto t1 = Clock::now();
-        const auto ns = static_cast<std::uint32_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(t1 - t0).count());
-        (op.type == OpType::Add ? add : op.type == OpType::Cancel ? cancel : market).ns.push_back(ns);
+        (op.type == OpType::Add ? add : op.type == OpType::Cancel ? cancel : market).ns.push_back(to_ns(t1 - t0));
         trades.clear();
     }
+
+    std::printf("%s\n", label);
+    std::printf("  %-12s %10s %8s %8s %8s %10s\n", "operation", "count", "p50", "p99", "p99.9", "max");
+    for (auto* s : {&add, &cancel, &market}) {
+        const std::size_t n = s->ns.size();
+        const auto mx = n ? *std::max_element(s->ns.begin(), s->ns.end()) : 0u;
+        std::printf("  %-12s %10zu %6u ns %6u ns %6u ns %8u ns\n", s->name, n, pct(s->ns, 0.50), pct(s->ns, 0.99),
+                    pct(s->ns, 0.999), mx);
+    }
+    std::printf("  resting orders at end: %zu (bid levels %zu, ask levels %zu)\n\n", book.order_count(),
+                book.level_count(Side::Buy), book.level_count(Side::Sell));
+}
+
+}  // namespace
+
+int main(int argc, char** argv) {
+    WorkloadConfig cfg;
+    if (argc > 1) cfg.ops = std::stoul(argv[1]);
+    const auto ops = make_workload(cfg);
 
     const std::uint32_t res = clock_resolution_ns();
     std::printf("ops: %zu   clock resolution: %u ns   clock overhead (p50): %u ns\n", cfg.ops, res,
                 clock_overhead_ns());
     if (res > 20)
-        std::printf("warning: coarse clock; values below ~%u ns are timer ticks, not real latency.\n"
-                    "         Use the throughput benchmark for averages, or run on Linux for ns-level samples.\n",
+        std::printf("warning: coarse clock; every sample is a multiple of ~%u ns, so these are tick counts,\n"
+                    "         not precise latencies. Use the throughput benchmark, or run on Linux.\n",
                     res);
     std::printf("\n");
-    std::printf("%-12s %10s %8s %8s %8s %10s\n", "operation", "count", "p50", "p99", "p99.9", "max");
-    for (auto* s : {&add, &cancel, &market}) {
-        const std::size_t n = s->ns.size();
-        const auto mx = n ? *std::max_element(s->ns.begin(), s->ns.end()) : 0u;
-        std::printf("%-12s %10zu %6u ns %6u ns %6u ns %8u ns\n", s->name, n, pct(s->ns, 0.50), pct(s->ns, 0.99),
-                    pct(s->ns, 0.999), mx);
-    }
-    std::printf("\nresting orders at end: %zu  (bid levels %zu, ask levels %zu)\n", book.order_count(),
-                book.level_count(Side::Buy), book.level_count(Side::Sell));
+
+    run<MapOrderBook>("v0 MapOrderBook (std::map levels)", ops, cfg.ops);
+    run<OrderBook>("v1 OrderBook (flat array levels)", ops, cfg.ops);
     return EXIT_SUCCESS;
 }

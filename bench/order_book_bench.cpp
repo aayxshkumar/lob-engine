@@ -3,6 +3,7 @@
 
 #include <benchmark/benchmark.h>
 
+#include "lob/map_order_book.hpp"
 #include "lob/order_book.hpp"
 #include "workload.hpp"
 
@@ -11,7 +12,8 @@ using namespace lob::bench;
 
 namespace {
 
-void apply(OrderBook& book, const Op& op, std::vector<Trade>& trades) {
+template <typename B>
+void apply(B& book, const Op& op, std::vector<Trade>& trades) {
     switch (op.type) {
         case OpType::Add: book.add_limit(op.id, op.side, op.price, op.qty, trades); break;
         case OpType::Cancel: book.cancel(op.id); break;
@@ -20,6 +22,7 @@ void apply(OrderBook& book, const Op& op, std::vector<Trade>& trades) {
 }
 
 // Full mixed workload: adds, cancels, crossing orders and market orders.
+template <typename B>
 void BM_MixedWorkload(benchmark::State& state) {
     WorkloadConfig cfg;
     cfg.ops = static_cast<std::size_t>(state.range(0));
@@ -29,7 +32,7 @@ void BM_MixedWorkload(benchmark::State& state) {
 
     for (auto _ : state) {
         state.PauseTiming();
-        OrderBook book{cfg.ops};
+        B book{cfg.ops};
         state.ResumeTiming();
         for (const Op& op : ops) {
             apply(book, op, trades);
@@ -39,15 +42,17 @@ void BM_MixedWorkload(benchmark::State& state) {
     }
     state.SetItemsProcessed(static_cast<std::int64_t>(state.iterations()) * state.range(0));
 }
-BENCHMARK(BM_MixedWorkload)->Arg(100'000)->Arg(1'000'000)->Unit(benchmark::kMillisecond);
+BENCHMARK_TEMPLATE(BM_MixedWorkload, MapOrderBook)->Name("v0_map/mixed")->Arg(100'000)->Arg(1'000'000)->Unit(benchmark::kMillisecond);
+BENCHMARK_TEMPLATE(BM_MixedWorkload, OrderBook)->Name("v1_array/mixed")->Arg(100'000)->Arg(1'000'000)->Unit(benchmark::kMillisecond);
 
 // Passive adds only (no matching): isolates level lookup + insert cost.
+template <typename B>
 void BM_AddPassive(benchmark::State& state) {
     const std::size_t n = static_cast<std::size_t>(state.range(0));
     std::vector<Trade> trades;
     for (auto _ : state) {
         state.PauseTiming();
-        OrderBook book{n};
+        B book{n};
         state.ResumeTiming();
         for (std::size_t i = 0; i < n; ++i) {
             const Side s = (i & 1) ? Side::Buy : Side::Sell;
@@ -58,11 +63,13 @@ void BM_AddPassive(benchmark::State& state) {
     }
     state.SetItemsProcessed(static_cast<std::int64_t>(state.iterations()) * state.range(0));
 }
-BENCHMARK(BM_AddPassive)->Arg(100'000)->Unit(benchmark::kMillisecond);
+BENCHMARK_TEMPLATE(BM_AddPassive, MapOrderBook)->Name("v0_map/add_passive")->Arg(100'000)->Unit(benchmark::kMillisecond);
+BENCHMARK_TEMPLATE(BM_AddPassive, OrderBook)->Name("v1_array/add_passive")->Arg(100'000)->Unit(benchmark::kMillisecond);
 
 // Add then cancel the same order: the hot path for quote updates.
+template <typename B>
 void BM_AddCancel(benchmark::State& state) {
-    OrderBook book{1024};
+    B book{1024};
     std::vector<Trade> trades;
     // Some resting depth so levels exist.
     for (OrderId id = 1; id <= 200; ++id) book.add_limit(id, Side::Buy, 9'900 + Price(id % 50), 10, trades);
@@ -74,7 +81,33 @@ void BM_AddCancel(benchmark::State& state) {
     }
     state.SetItemsProcessed(state.iterations() * 2);
 }
-BENCHMARK(BM_AddCancel);
+BENCHMARK_TEMPLATE(BM_AddCancel, MapOrderBook)->Name("v0_map/add_cancel");
+BENCHMARK_TEMPLATE(BM_AddCancel, OrderBook)->Name("v1_array/add_cancel");
+
+// Worst case for flat arrays: a sparse book. Asks sit `gap` ticks apart and a
+// market order clears the best one each time, so the array version has to
+// scan `gap` empty levels to find the next best. std::map just takes the
+// next node.
+template <typename B>
+void BM_SparseSweep(benchmark::State& state) {
+    const Price gap = static_cast<Price>(state.range(0));
+    constexpr int kLevels = 50;
+    std::vector<Trade> trades;
+    trades.reserve(16);
+    OrderId id = 1;
+    for (auto _ : state) {
+        state.PauseTiming();
+        B book{1024};
+        for (int i = 0; i < kLevels; ++i) book.add_limit(id++, Side::Sell, 1'000 + i * gap, 1, trades);
+        state.ResumeTiming();
+        for (int i = 0; i < kLevels; ++i) book.add_market(id++, Side::Buy, 1, trades);
+        trades.clear();
+        benchmark::DoNotOptimize(book.best_ask());
+    }
+    state.SetItemsProcessed(static_cast<std::int64_t>(state.iterations()) * kLevels);
+}
+BENCHMARK_TEMPLATE(BM_SparseSweep, MapOrderBook)->Name("v0_map/sparse_sweep")->Arg(1)->Arg(100)->Arg(1'000);
+BENCHMARK_TEMPLATE(BM_SparseSweep, OrderBook)->Name("v1_array/sparse_sweep")->Arg(1)->Arg(100)->Arg(1'000);
 
 }  // namespace
 
