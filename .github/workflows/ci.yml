@@ -1,0 +1,37 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-clang-release
+            os: ubuntu-24.04
+            cxx: clang++
+            flags: -DCMAKE_BUILD_TYPE=Release
+          - name: linux-gcc-asan-ubsan
+            os: ubuntu-24.04
+            cxx: g++
+            flags: -DCMAKE_BUILD_TYPE=Debug -DLOB_SANITIZERS=address,undefined -DLOB_BUILD_BENCH=OFF
+          - name: macos-clang-ubsan
+            os: macos-15
+            cxx: clang++
+            flags: -DCMAKE_BUILD_TYPE=Debug -DLOB_SANITIZERS=undefined -DLOB_BUILD_BENCH=OFF
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_CXX_COMPILER=${{ matrix.cxx }} ${{ matrix.flags }}
+      - name: Build
+        run: cmake --build build -j 4
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+      - name: Latency smoke run
+        if: matrix.name == 'linux-clang-release'
+        run: ./build/lob_latency 200000
