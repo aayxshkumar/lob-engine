@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 360" role="img" aria-labelledby="t d" font-family="Charter, 'Bitstream Charter', Cambria, serif" font-size="13">
+<title id="t">Latency CDF of add_limit, v0 vs v1, Apple M4</title>
+<desc id="d">Cumulative fraction of operations against latency. Both curves rise in steps every 41.7 ns because the M4's steady_clock ticks at 24 MHz.</desc>
+<style>.bg{fill:#fff}.ax{stroke:#111;stroke-width:1}.grid{stroke:#e5e5e5;stroke-width:1}.txt{fill:#111}.mut{fill:#555}.s0{stroke:#B3261E}.s1{stroke:#1F5FA8}.line{fill:none;stroke-width:2}@media (prefers-color-scheme: dark){.bg{fill:#111}.ax{stroke:#e8e8e8}.grid{stroke:#2a2a2a}.txt{fill:#e8e8e8}.mut{fill:#aaa}.s0{stroke:#F2857C}.s1{stroke:#7DB2F0}}</style>
+<rect class="bg" width="720" height="360"/>
+<line class="grid" x1="64.0" y1="24" x2="64.0" y2="304"/>
+<text class="mut" x="64.0" y="322" text-anchor="middle">0</text>
+<line class="grid" x1="210.3" y1="24" x2="210.3" y2="304"/>
+<text class="mut" x="210.3" y="322" text-anchor="middle">42</text>
+<line class="grid" x1="356.6" y1="24" x2="356.6" y2="304"/>
+<text class="mut" x="356.6" y="322" text-anchor="middle">83</text>
+<line class="grid" x1="502.9" y1="24" x2="502.9" y2="304"/>
+<text class="mut" x="502.9" y="322" text-anchor="middle">125</text>
+<line class="grid" x1="649.2" y1="24" x2="649.2" y2="304"/>
+<text class="mut" x="649.2" y="322" text-anchor="middle">167</text>
+<line class="grid" x1="64" y1="304.0" x2="696" y2="304.0"/>
+<text class="mut" x="56" y="308.0" text-anchor="end">0%</text>
+<line class="grid" x1="64" y1="234.0" x2="696" y2="234.0"/>
+<text class="mut" x="56" y="238.0" text-anchor="end">25%</text>
+<line class="grid" x1="64" y1="164.0" x2="696" y2="164.0"/>
+<text class="mut" x="56" y="168.0" text-anchor="end">50%</text>
+<line class="grid" x1="64" y1="94.0" x2="696" y2="94.0"/>
+<text class="mut" x="56" y="98.0" text-anchor="end">75%</text>
+<line class="grid" x1="64" y1="24.0" x2="696" y2="24.0"/>
+<text class="mut" x="56" y="28.0" text-anchor="end">100%</text>
+<line class="ax" x1="64" y1="304" x2="696" y2="304"/>
+<line class="ax" x1="64" y1="24" x2="64" y2="304"/>
+<text class="txt" x="380" y="346" text-anchor="middle">add_limit latency, ns (gridlines = one 41.7 ns clock tick)</text>
+<path class="line s0" d="M64.0,304.0H64.0V262.8H208.0V192.0H211.5V50.6H355.4V34.9H358.9V27.1H502.9V24.8H650.4V24.6H696.0"/>
+<line class="line s0" x1="486" y1="36" x2="510" y2="36"/>
+<text class="txt" x="516" y="40">v0: std::map levels</text>
+<path class="line s1" d="M64.0,304.0H64.0V208.5H208.0V148.9H211.5V29.9H355.4V26.8H358.9V25.1H502.9V24.3H696.0"/>
+<line class="line s1" x1="486" y1="56" x2="510" y2="56"/>
+<text class="txt" x="516" y="60">v1: flat array + bitset</text>
+</svg>

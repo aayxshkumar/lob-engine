@@ -1,7 +1,8 @@
 // Per-operation latency percentiles over the synthetic workload, for the
 // current OrderBook and the v0 MapOrderBook baseline.
 //
-//   ./lob_latency [ops]          default 1,000,000
+//   ./lob_latency [ops] [--csv out.csv]   default 1,000,000 ops; --csv writes
+//                                        1,001 quantiles per operation for plotting
 //
 // Each operation is timed individually with steady_clock. The clock read
 // itself costs tens of nanoseconds, so treat absolute numbers as an upper
@@ -63,8 +64,17 @@ std::uint32_t clock_resolution_ns() {
     return best;
 }
 
+// Writes 1,001 quantiles (0.0%, 0.1%, ... 100%) of one sample set as CSV rows.
+void write_quantiles(std::FILE* f, const char* book, const char* op, std::vector<std::uint32_t> v) {
+    std::sort(v.begin(), v.end());
+    for (int q = 0; q <= 1000; ++q) {
+        const std::size_t k = static_cast<std::size_t>((static_cast<double>(q) / 1000.0) * static_cast<double>(v.size() - 1));
+        std::fprintf(f, "%s,%s,%.3f,%u\n", book, op, q / 1000.0, v[k]);
+    }
+}
+
 template <typename B>
-void run(const char* label, const std::vector<Op>& ops, std::size_t capacity) {
+void run(const char* label, const char* key, const std::vector<Op>& ops, std::size_t capacity, std::FILE* csv) {
     B book{capacity};
     std::vector<Trade> trades;
     trades.reserve(1024);
@@ -92,6 +102,8 @@ void run(const char* label, const std::vector<Op>& ops, std::size_t capacity) {
         std::printf("  %-12s %10zu %6u ns %6u ns %6u ns %8u ns\n", s->name, n, pct(s->ns, 0.50), pct(s->ns, 0.99),
                     pct(s->ns, 0.999), mx);
     }
+    if (csv)
+        for (auto* s : {&add, &cancel, &market}) write_quantiles(csv, key, s->name, s->ns);
     std::printf("  resting orders at end: %zu (bid levels %zu, ask levels %zu)\n\n", book.order_count(),
                 book.level_count(Side::Buy), book.level_count(Side::Sell));
 }
@@ -100,7 +112,18 @@ void run(const char* label, const std::vector<Op>& ops, std::size_t capacity) {
 
 int main(int argc, char** argv) {
     WorkloadConfig cfg;
-    if (argc > 1) cfg.ops = std::stoul(argv[1]);
+    // Usage: lob_latency [ops] [--csv quantiles.csv]
+    std::FILE* csv = nullptr;
+    for (int i = 1; i < argc; ++i) {
+        const std::string a = argv[i];
+        if (a == "--csv" && i + 1 < argc) {
+            csv = std::fopen(argv[++i], "w");
+            if (!csv) { std::perror("--csv"); return EXIT_FAILURE; }
+            std::fprintf(csv, "book,op,quantile,ns\n");
+        } else {
+            cfg.ops = std::stoul(a);
+        }
+    }
     const auto ops = make_workload(cfg);
 
     const std::uint32_t res = clock_resolution_ns();
@@ -112,7 +135,8 @@ int main(int argc, char** argv) {
                     res);
     std::printf("\n");
 
-    run<MapOrderBook>("v0 MapOrderBook (std::map levels)", ops, cfg.ops);
-    run<OrderBook>("v1 OrderBook (flat array levels)", ops, cfg.ops);
+    run<MapOrderBook>("v0 MapOrderBook (std::map levels)", "v0_map", ops, cfg.ops, csv);
+    run<OrderBook>("v1 OrderBook (flat array + bitset levels)", "v1_array", ops, cfg.ops, csv);
+    if (csv) std::fclose(csv);
     return EXIT_SUCCESS;
 }
