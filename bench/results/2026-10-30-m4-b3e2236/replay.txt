@@ -1,0 +1,10 @@
+recording: 10000 snapshot levels, 11992 diff messages (544092 level updates), 71328 trades, 1200 s
+price band: 79575.32 to 80230.67 (44015 updates outside it skipped)
+translated: 562850 ops = 300999 adds (53.5%), 226941 cancels (40.3%), 34910 size reductions (6.2%)
+peak live orders: 4203   level updates that crossed our book: 0
+top 10 levels match the exchange after 99.93% of diff messages
+
+replay, median of 5 (capacity 16384):
+  v0 MapOrderBook     38.30 ms    14.7M ops/s
+  v2 OrderBook         7.09 ms    79.4M ops/s  (5.41x)
+  both books: 63498 fills, 3985 orders resting at the end
