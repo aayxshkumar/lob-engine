@@ -4,9 +4,9 @@
 #     tools/run_bench.sh [recording.lobrec]
 #
 # Writes bench/results/<date>-<machine>-<sha7>/:
-#   bench.json   Google Benchmark JSON, 3 repetitions, aggregates and every run
+#   bench.json   Google Benchmark JSON, 10 repetitions, interleaved, aggregates and every run
 #   replay.txt   lob_replay output, if a recording is given (recordings aren't committed)
-#   meta.txt     commit, machine, OS and compiler
+#   meta.txt     commit, machine, OS, compiler and load average (run it on an idle machine)
 #
 # It refuses to run if the code differs from the commit, so a result always names
 # exactly what produced it.
@@ -34,9 +34,10 @@ cmake --build build -j >/dev/null
     echo "compiler $(c++ --version | head -1)"
     echo "flags    Release (-O3), see CMakeLists.txt"
     echo "date     $(date -u +%FT%TZ)"
+    echo "load     $(sysctl -n vm.loadavg 2>/dev/null || cat /proc/loadavg)"
 } > "$out/meta.txt"
 
-./build/lob_bench --benchmark_repetitions=3 --benchmark_out="$out/bench.json" --benchmark_out_format=json
+./build/lob_bench --benchmark_repetitions=10 --benchmark_enable_random_interleaving=true --benchmark_out="$out/bench.json" --benchmark_out_format=json
 
 if [[ $# -ge 1 ]]; then
     ./build/lob_replay "$1" | tee "$out/replay.txt"
