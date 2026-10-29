@@ -2,6 +2,8 @@
 
 A limit order book and matching engine in C++20. Two measured steps took the mixed workload from **21.2M to 67.5M ops/s (3.2×)**: flat price-level arrays with a bitset (v1), then an open-addressing id table in place of `std::unordered_map` (v2). On 20 minutes of real Binance BTCUSDT order flow, v2 is **5.2× faster** than the `std::map` version. The same differential test checks every version, and it catches every bug I've planted on purpose.
 
+<picture><source media="(prefers-color-scheme: dark)" srcset="docs/throughput-dark.svg"><img src="docs/throughput-light.svg" width="880" height="414" alt="Throughput, million ops/s, Apple M4, one thread. Synthetic mixed workload: std::map 21.2M, arrays + bitset 34.3M, id table 67.5M. 20 minutes of Binance BTCUSDT replayed: std::map 15.9M, id table 81.9M."></picture>
+
 ```bash
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build -j
 ./build/lob_tests && ./build/lob_bench && ./build/lob_latency
@@ -9,7 +11,7 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build -j
 
 ## Results
 
-Apple M4, macOS 26, Apple clang 17, `-O3`, median of 3 repetitions. Synthetic workload with a fixed seed: 55% limit adds within ±50 ticks of mid (10% of them crossing), 40% cancels, 5% market orders. It peaks at about 109k live orders, and books are sized for 256k unless noted. v0 (`MapOrderBook`) and the current book are both in this repo, and `lob_bench` runs them side by side; v1 numbers are from commit `536cb05`.
+Apple M4, macOS 26, Apple clang 17, `-O3`, median of 3 repetitions. Synthetic workload with a fixed seed: 55% limit adds within ±50 ticks of mid (10% of them crossing), 40% cancels, 5% market orders. It peaks at about 109k live orders. v0 and v2 are sized for 262,144 orders; v1's numbers are from commit `536cb05`, whose benchmark sized the book for all 1M operations. v0 (`MapOrderBook`) and the current book are both in this repo, and `lob_bench` runs them side by side. Raw output from a rerun of the same code is in [`bench/results/`](bench/results/) (`tools/run_bench.sh` writes it): 21.6M → 70.2M ops/s on the mixed workload, within run-to-run noise of the table.
 
 | Benchmark | v0 `std::map` | v1 arrays + bitset | v2 + id table | v0 → v2 |
 |---|---|---|---|---|
@@ -27,7 +29,7 @@ Before replacing it I made the benchmark harder. The generator handed out ids 1,
 
 [`IdTable`](include/lob/id_table.hpp) is a flat array of 16-byte `{id, slot}` entries with linear probing, at most half full, using Fibonacci hashing (one multiply). Deletes use backward shift rather than tombstones, so a long-running book doesn't fill up with dead entries. Its capacity is fixed by the order pool, so it never rehashes.
 
-The catch is that a fixed table's memory follows the configured capacity, not the live order count. Sized for 1M orders it's 32 MB, which doesn't fit in cache, and with sequential ids the gain disappears (34.4M → 34.4M). Sized to the workload (256k slots, 8 MB) it's about 2× on both kinds of id. So size the book for the peak you expect, not the largest number you can think of.
+The catch is that a fixed table's memory follows the configured capacity, not the live order count. Sized for 1M orders it's 32 MB, which doesn't fit in cache, and with sequential ids the gain disappears (34.4M → 34.4M). Sized to the workload (262,144 orders: 2^19 slots, 8 MB) it's about 2× on both kinds of id. So size the book for the peak you expect, not the largest number you can think of.
 
 ### v1: the step that made it worse first
 
@@ -128,7 +130,9 @@ include/lob/   order_book.hpp, id_table.hpp, map_order_book.hpp (v0 baseline), t
 src/           implementations
 tests/         typed GoogleTest suites, reference_book.hpp (test oracle)
 bench/         workload generator, throughput benchmarks, latency percentiles, replay
-tools/         record_binance.py (stdlib-only recorder), make_test_recording.py, plot_cdf.py
+bench/results/ raw output of tools/run_bench.sh, one folder per run (commit, machine, JSON)
+tools/         record_binance.py (stdlib-only recorder), make_test_recording.py, run_bench.sh,
+               plot_cdf.py and plot_throughput.py (the charts in docs/)
 ```
 
 MIT licensed.

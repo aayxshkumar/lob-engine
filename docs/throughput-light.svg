@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="880" height="414" viewBox="0 0 880 414" font-family='-apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif' role="img" aria-labelledby="t"><title id="t">Throughput, million ops/s, Apple M4, one thread. Synthetic mixed workload: std::map 21.2M, arrays + bitset 34.3M, id table 67.5M. 20 minutes of Binance BTCUSDT replayed: std::map 15.9M, id table 81.9M.</title>
+<text x="0" y="28" font-size="24" font-weight="600" fill="#1f2328">Throughput, million ops/s (higher is better)</text>
+<text x="0" y="56" font-size="17" fill="#59636e">Apple M4, Apple clang 17 -O3, one thread; median of 3 (synthetic), 5 (replay)</text>
+<line x1="236.0" y1="82" x2="236.0" y2="372" stroke="#d1d9e0" stroke-width="1"/>
+<text x="236.0" y="394" font-size="16" fill="#59636e" text-anchor="middle">0</text>
+<line x1="361.3" y1="82" x2="361.3" y2="372" stroke="#d1d9e0" stroke-width="1"/>
+<text x="361.3" y="394" font-size="16" fill="#59636e" text-anchor="middle">20</text>
+<line x1="486.7" y1="82" x2="486.7" y2="372" stroke="#d1d9e0" stroke-width="1"/>
+<text x="486.7" y="394" font-size="16" fill="#59636e" text-anchor="middle">40</text>
+<line x1="612.0" y1="82" x2="612.0" y2="372" stroke="#d1d9e0" stroke-width="1"/>
+<text x="612.0" y="394" font-size="16" fill="#59636e" text-anchor="middle">60</text>
+<line x1="737.3" y1="82" x2="737.3" y2="372" stroke="#d1d9e0" stroke-width="1"/>
+<text x="737.3" y="394" font-size="16" fill="#59636e" text-anchor="middle">80</text>
+<text x="0" y="108" font-size="18" font-weight="600" fill="#1f2328">Synthetic mixed workload, 1M operations</text>
+<text x="224" y="138" font-size="18" fill="#1f2328" text-anchor="end" xml:space="preserve">v0  std::map</text>
+<rect x="236" y="122" width="132.9" height="22" fill="#af2b25"/>
+<text x="376.9" y="138" font-size="18" font-weight="600" fill="#1f2328">21.2M</text>
+<text x="224" y="170" font-size="18" fill="#1f2328" text-anchor="end" xml:space="preserve">v1  arrays + bitset</text>
+<rect x="236" y="154" width="214.9" height="22" fill="#565b62"/>
+<text x="458.9" y="170" font-size="18" font-weight="600" fill="#1f2328">34.3M</text>
+<text x="224" y="202" font-size="18" fill="#1f2328" text-anchor="end" xml:space="preserve">v2  + id table</text>
+<rect x="236" y="186" width="423.0" height="22" fill="#175fa4"/>
+<text x="667.0" y="202" font-size="18" font-weight="600" fill="#1f2328">67.5M</text>
+<text x="0" y="240" font-size="18" font-weight="600" fill="#1f2328">20 minutes of Binance BTCUSDT, replayed</text>
+<text x="224" y="270" font-size="18" fill="#1f2328" text-anchor="end" xml:space="preserve">v0  std::map</text>
+<rect x="236" y="254" width="99.6" height="22" fill="#af2b25"/>
+<text x="343.6" y="270" font-size="18" font-weight="600" fill="#1f2328">15.9M</text>
+<text x="224" y="302" font-size="18" fill="#1f2328" text-anchor="end" xml:space="preserve">v1  arrays + bitset</text>
+<text x="242" y="302" font-size="18" fill="#59636e">not run</text>
+<text x="224" y="334" font-size="18" fill="#1f2328" text-anchor="end" xml:space="preserve">v2  + id table</text>
+<rect x="236" y="318" width="513.2" height="22" fill="#175fa4"/>
+<text x="757.2" y="334" font-size="18" font-weight="600" fill="#1f2328">81.9M</text>
+</svg>

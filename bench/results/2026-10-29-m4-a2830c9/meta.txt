@@ -1,0 +1,6 @@
+commit   a2830c9c5e6341771570716dbbfecbf5259a10f0
+machine  Apple M4
+os       Darwin 25.5.0 arm64
+compiler Apple clang version 17.0.0 (clang-1700.6.4.2)
+flags    Release (-O3), see CMakeLists.txt
+date     2026-10-29T13:41:42Z
