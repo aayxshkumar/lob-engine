@@ -68,10 +68,11 @@ def chart(data, op, W, H, L, R, T, B, fs, long=True):
     for k in range(MAX_TICKS + 1):
         p.append(f'<line class="grid" x1="{x(k):.1f}" y1="{T}" x2="{x(k):.1f}" y2="{H - B}"/>')
         p.append(f'<text class="txt" x="{x(k):.1f}" y="{H - B + fs + 5}" text-anchor="middle">{k}</text>')
-        ns = "0" if k == 0 else f"{k * TICK_NS:.1f}" if long else f"{k * TICK_NS:.0f}"
-        anchor = "end" if k == MAX_TICKS and not long else "middle"
-        p.append(f'<text class="mut" x="{x(k):.1f}" y="{H - B + 2 * fs + 7}" text-anchor="{anchor}" '
-                 f'font-size="{fs - 2}">{ns} ns</text>')
+        if k:  # no "0 ns": a 0-tick reading means no tick fell inside the call, not that it took 0 ns
+            ns = f"{k * TICK_NS:.1f}" if long else f"{k * TICK_NS:.0f}"
+            anchor = "end" if k == MAX_TICKS and not long else "middle"
+            p.append(f'<text class="mut" x="{x(k):.1f}" y="{H - B + 2 * fs + 7}" text-anchor="{anchor}" '
+                     f'font-size="{max(fs - 2, 13)}">{ns} ns</text>')
     p.append(f'<line class="ax" x1="{L}" y1="{H - B}" x2="{W - R}" y2="{H - B}"/>')
     p.append(f'<text class="txt" x="{(L + W - R) / 2:.0f}" y="{H - 6}" text-anchor="middle">'
              f'{op} reading, clock ticks at or under</text>')
@@ -103,7 +104,7 @@ def main():
     out = Path(sys.argv[3])
     out.write_text(chart(data, op, 720, 360, 70, 28, 24, 72, 16))
     narrow = out.with_name(out.stem + "-narrow" + out.suffix)
-    narrow.write_text(chart(data, op, 360, 300, 46, 14, 16, 60, 13, long=False))
+    narrow.write_text(chart(data, op, 360, 300, 46, 14, 16, 62, 14, long=False))
     for key, label, _ in SERIES:
         if key in data:
             print(label, " ".join(f"{k}:{v:.1%}" for k, v in enumerate(shares(data[key]))))

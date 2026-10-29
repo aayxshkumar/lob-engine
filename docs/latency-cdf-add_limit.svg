@@ -8,7 +8,6 @@
 <text class="mut" x="62" y="28.0" text-anchor="end">100%</text>
 <line class="grid" x1="70.0" y1="24" x2="70.0" y2="288"/>
 <text class="txt" x="70.0" y="309" text-anchor="middle">0</text>
-<text class="mut" x="70.0" y="327" text-anchor="middle" font-size="14">0 ns</text>
 <line class="grid" x1="277.3" y1="24" x2="277.3" y2="288"/>
 <text class="txt" x="277.3" y="309" text-anchor="middle">1</text>
 <text class="mut" x="277.3" y="327" text-anchor="middle" font-size="14">41.7 ns</text>

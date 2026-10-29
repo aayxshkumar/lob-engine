@@ -1,6 +1,6 @@
 # lob-engine
 
-A limit order book and matching engine in C++20. Two measured steps took the mixed workload from **21.2M to 67.5M ops/s (3.2×)**: flat price-level arrays with a bitset (v1), then an open-addressing id table in place of `std::unordered_map` (v2). On 20 minutes of real Binance BTCUSDT order flow, v2 is **5.2× faster** than the `std::map` version. The same differential test checks every version, and it catches every bug I've planted on purpose.
+A limit order book and matching engine in C++20. Two measured steps took the mixed workload from **21.2M to 67.5M ops/s (3.2×)**: flat price-level arrays with a bitset (v1), then an open-addressing id table in place of `std::unordered_map` (v2). On 20 minutes of real Binance BTCUSDT order flow, v2 is **5.2× faster** than the `std::map` version. The same tests check every version, and they catch every bug I've planted on purpose.
 
 <picture><source media="(prefers-color-scheme: dark)" srcset="docs/throughput-dark.svg"><img src="docs/throughput-light.svg" width="880" height="414" alt="Throughput, million ops/s, Apple M4, one thread. Synthetic mixed workload: std::map 21.2M, arrays + bitset 34.3M, id table 67.5M. 20 minutes of Binance BTCUSDT replayed: std::map 15.9M, id table 81.9M."></picture>
 
@@ -11,7 +11,7 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build -j
 
 ## Results
 
-Apple M4, macOS 26, Apple clang 17, `-O3`, median of 3 repetitions. Synthetic workload with a fixed seed: 55% limit adds within ±50 ticks of mid (10% of them crossing), 40% cancels, 5% market orders. It peaks at about 109k live orders. v0 and v2 are sized for 262,144 orders; v1's numbers are from commit `536cb05`, whose benchmark sized the book for all 1M operations. v0 (`MapOrderBook`) and the current book are both in this repo, and `lob_bench` runs them side by side. Raw output from a rerun of the same code is in [`bench/results/`](bench/results/) (`tools/run_bench.sh` writes it): 21.6M → 70.2M ops/s on the mixed workload, within run-to-run noise of the table.
+Apple M4, macOS 26, Apple clang 17, `-O3`, median of 3 repetitions. Synthetic workload with a fixed seed: 55% limit adds within ±50 ticks of mid (10% of them crossing), 40% cancels, 5% market orders. It peaks at about 109k live orders. v0 and v2 are sized for 262,144 orders; v1's numbers are from commit `536cb05`, whose benchmark sized the book for all 1M operations. v0 (`MapOrderBook`) and the current book are both in this repo, and `lob_bench` runs them side by side. Raw output from a rerun of the same code is in [`bench/results/`](bench/results/) (`tools/run_bench.sh` writes it): 21.6M → 70.2M ops/s on the mixed workload, 1.8% and 4.1% above the table's medians.
 
 | Benchmark | v0 `std::map` | v1 arrays + bitset | v2 + id table | v0 → v2 |
 |---|---|---|---|---|
@@ -25,7 +25,7 @@ Apple M4, macOS 26, Apple clang 17, `-O3`, median of 3 repetitions. Synthetic wo
 
 Every add, cancel and fill looks an order up by id. After v1, that lookup was the largest cost left: `std::unordered_map` allocates a node per order, and each lookup follows a bucket pointer and then a node pointer.
 
-Before replacing it I made the benchmark harder. The generator handed out ids 1, 2, 3…, which is unusually kind to `unordered_map`: consecutive ids land in consecutive buckets, and nodes allocated in order sit next to each other in memory. Real venues send ids that look random. Scrambling the same ids with a bijective mixer cost v1 25% (34.4M → 25.7M ops/s, book sized for 1M), all of it in the map.
+Before replacing it I made the benchmark harder. The generator handed out ids 1, 2, 3…, which is unusually kind to `unordered_map`: consecutive ids land in consecutive buckets, and nodes allocated in order sit next to each other in memory. A real feed rarely gives one book a dense 1, 2, 3 run: on Nasdaq ITCH, for example, order numbers are assigned across every instrument, so a single book sees a sparse, interleaved subset, and scrambled ids are the pessimistic version of that. Scrambling the same ids with a bijective mixer cost v1 25% in one run (34.4M → 25.7M ops/s, book sized for 1M); a later run gave the table's 30.4M. Neither v1 build with scrambled ids was committed, so treat the v1 random-id figures as approximate.
 
 [`IdTable`](include/lob/id_table.hpp) is a flat array of 16-byte `{id, slot}` entries with linear probing, at most half full, using Fibonacci hashing (one multiply). Deletes use backward shift rather than tombstones, so a long-running book doesn't fill up with dead entries. Its capacity is fixed by the order pool, so it never rehashes.
 
@@ -91,7 +91,7 @@ python3 tools/record_binance.py BTCUSDT 1200 data/btcusdt.lobrec
 ## Correctness
 
 - **Every test runs against both books.** The test suites are typed: the same 22 tests run on `OrderBook` and `MapOrderBook`, plus 3 tests specific to the array (price-band edges, out-of-range rejection, finding the next best price across gaps) and 4 for the id table. 51 tests in total.
-- **Differential test:** 20,000 random operations (adds, cancels, three kinds of modify, market orders) go through each book and a deliberately naive [`ReferenceBook`](tests/reference_book.hpp). After every step, trades and book state must match exactly.
+- **Differential test:** 20,000 random operations (adds, cancels, three kinds of modify, market orders) per seed, 10 seeds, go through each book and a deliberately naive [`ReferenceBook`](tests/reference_book.hpp). After every step the trades, best bid and ask, order count and depth at every reachable price must match exactly.
 - **Id table differential test:** 20 seeds × 20,000 inserts and erases against `std::unordered_map`, in a 16-entry table so probe runs are long and wrap past the end of the array, which is where backward-shift bugs hide.
 - **Mutation-checked:** I planted 16 bugs by hand and the tests caught all 16.
   - Matching rules: priority kept on a size increase, market orders obeying a limit, trades at the taker's price, crossing one tick early, a stale level total.

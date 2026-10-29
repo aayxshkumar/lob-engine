@@ -3,6 +3,7 @@
 
 #include <gtest/gtest.h>
 
+#include <cstdint>
 #include <random>
 
 #include "reference_book.hpp"
@@ -254,75 +255,81 @@ TYPED_TEST(BookProperty, NeverCrossed) {
 // cancels, modifies, market orders) through OrderBook and the naive
 // ReferenceBook, and require identical trades and book state at every step.
 TYPED_TEST(BookProperty, MatchesReferenceBook) {
-    TypeParam book{1 << 16};
-    test::ReferenceBook ref;
-    std::vector<Trade> got, want;
-    std::mt19937_64 rng(1234);
-    std::uniform_int_distribution<int> op(0, 99), px(95, 105), qty(1, 30);
-    std::vector<OrderId> ids;
-    OrderId next = 1;
+    // 10 seeds (the reference scans linearly, so CI under the sanitizers stays quick).
+    // Every step compares trades, best prices, the order count and the depth at
+    // every price the flow can reach.
+    for (std::uint64_t seed = 1; seed <= 10; ++seed) {
+        SCOPED_TRACE(testing::Message() << "seed " << seed);
+        TypeParam book{1 << 16};
+        test::ReferenceBook ref;
+        std::vector<Trade> got, want;
+        std::mt19937_64 rng(seed);
+        std::uniform_int_distribution<int> op(0, 99), px(95, 105), qty(1, 30);
+        std::vector<OrderId> ids;
+        OrderId next = 1;
 
-    for (int step = 0; step < 20'000; ++step) {
-        const int o = op(rng);
-        const Side s = (rng() & 1) ? Side::Buy : Side::Sell;
-        if (o < 55 || ids.empty()) {
-            // Mostly passive (buys low, sells high) so the book builds depth
-            // and queues form; ~1 in 5 adds crosses.
-            const bool cross = op(rng) < 20;
-            const Price off = 1 + static_cast<Price>(rng() % 5);
-            const Price p = (s == Side::Buy) == cross ? 100 + off : 100 - off;
-            const Qty q = static_cast<Qty>(qty(rng));
-            book.add_limit(next, s, p, q, got);
-            ref.add_limit(next, s, p, q, want);
-            ids.push_back(next++);
-        } else if (o < 80) {
-            const OrderId id = ids[rng() % ids.size()];
-            const bool a = book.cancel(id) == Result::Ok;
-            const bool b = ref.cancel(id);
-            ASSERT_EQ(a, b) << "cancel disagreed at step " << step;
-        } else if (o < 92) {
-            // Three kinds of modify: shrink in place (keeps priority), grow at
-            // the same price (requeues), and move to a random price (requeues,
-            // may trade).
-            const OrderId id = ids[rng() % ids.size()];
-            const auto cur = ref.price_of(id);
-            const Qty cur_qty = ref.qty_of(id);
-            const int kind = cur ? static_cast<int>(rng() % 3) : 2;
-            Price p = px(rng);
-            Qty q = static_cast<Qty>(qty(rng));
-            if (kind == 0) {
-                p = *cur;
-                q = static_cast<Qty>(1 + rng() % cur_qty);
-            } else if (kind == 1) {
-                p = *cur;
-                q = cur_qty + static_cast<Qty>(1 + rng() % 10);
+        for (int step = 0; step < 20'000; ++step) {
+            const int o = op(rng);
+            const Side s = (rng() & 1) ? Side::Buy : Side::Sell;
+            if (o < 55 || ids.empty()) {
+                // Mostly passive (buys low, sells high) so the book builds depth
+                // and queues form; ~1 in 5 adds crosses.
+                const bool cross = op(rng) < 20;
+                const Price off = 1 + static_cast<Price>(rng() % 5);
+                const Price p = (s == Side::Buy) == cross ? 100 + off : 100 - off;
+                const Qty q = static_cast<Qty>(qty(rng));
+                book.add_limit(next, s, p, q, got);
+                ref.add_limit(next, s, p, q, want);
+                ids.push_back(next++);
+            } else if (o < 80) {
+                const OrderId id = ids[rng() % ids.size()];
+                const bool a = book.cancel(id) == Result::Ok;
+                const bool b = ref.cancel(id);
+                ASSERT_EQ(a, b) << "cancel disagreed at step " << step;
+            } else if (o < 92) {
+                // Three kinds of modify: shrink in place (keeps priority), grow at
+                // the same price (requeues), and move to a random price (requeues,
+                // may trade).
+                const OrderId id = ids[rng() % ids.size()];
+                const auto cur = ref.price_of(id);
+                const Qty cur_qty = ref.qty_of(id);
+                const int kind = cur ? static_cast<int>(rng() % 3) : 2;
+                Price p = px(rng);
+                Qty q = static_cast<Qty>(qty(rng));
+                if (kind == 0) {
+                    p = *cur;
+                    q = static_cast<Qty>(1 + rng() % cur_qty);
+                } else if (kind == 1) {
+                    p = *cur;
+                    q = cur_qty + static_cast<Qty>(1 + rng() % 10);
+                }
+                const bool a = book.modify(id, p, q, got) == Result::Ok;
+                const bool b = ref.modify(id, p, q, want);
+                ASSERT_EQ(a, b) << "modify disagreed at step " << step;
+            } else {
+                const Qty q = static_cast<Qty>(qty(rng));
+                book.add_market(next, s, q, got);
+                ref.add_market(next, s, q, want);
+                ++next;
             }
-            const bool a = book.modify(id, p, q, got) == Result::Ok;
-            const bool b = ref.modify(id, p, q, want);
-            ASSERT_EQ(a, b) << "modify disagreed at step " << step;
-        } else {
-            const Qty q = static_cast<Qty>(qty(rng));
-            book.add_market(next, s, q, got);
-            ref.add_market(next, s, q, want);
-            ++next;
-        }
 
-        ASSERT_EQ(got.size(), want.size()) << "trade count differs at step " << step;
-        for (std::size_t i = 0; i < got.size(); ++i) {
-            ASSERT_EQ(got[i].maker_id, want[i].maker_id) << "step " << step;
-            ASSERT_EQ(got[i].taker_id, want[i].taker_id) << "step " << step;
-            ASSERT_EQ(got[i].price, want[i].price) << "step " << step;
-            ASSERT_EQ(got[i].qty, want[i].qty) << "step " << step;
+            ASSERT_EQ(got.size(), want.size()) << "trade count differs at step " << step;
+            for (std::size_t i = 0; i < got.size(); ++i) {
+                ASSERT_EQ(got[i].maker_id, want[i].maker_id) << "step " << step;
+                ASSERT_EQ(got[i].taker_id, want[i].taker_id) << "step " << step;
+                ASSERT_EQ(got[i].price, want[i].price) << "step " << step;
+                ASSERT_EQ(got[i].qty, want[i].qty) << "step " << step;
+            }
+            ASSERT_EQ(book.best_bid(), ref.best(Side::Buy)) << "step " << step;
+            ASSERT_EQ(book.best_ask(), ref.best(Side::Sell)) << "step " << step;
+            ASSERT_EQ(book.order_count(), ref.order_count()) << "step " << step;
+            for (Price p = 95; p <= 105; ++p) {  // every price the flow can use
+                ASSERT_EQ(book.depth_at(Side::Buy, p), ref.depth_at(Side::Buy, p)) << "bid " << p << ", step " << step;
+                ASSERT_EQ(book.depth_at(Side::Sell, p), ref.depth_at(Side::Sell, p)) << "ask " << p << ", step " << step;
+            }
+            got.clear();
+            want.clear();
         }
-        ASSERT_EQ(book.best_bid(), ref.best(Side::Buy)) << "step " << step;
-        ASSERT_EQ(book.best_ask(), ref.best(Side::Sell)) << "step " << step;
-        ASSERT_EQ(book.order_count(), ref.order_count()) << "step " << step;
-        got.clear();
-        want.clear();
-    }
-    for (Price p = 95; p <= 105; ++p) {
-        EXPECT_EQ(book.depth_at(Side::Buy, p), ref.depth_at(Side::Buy, p));
-        EXPECT_EQ(book.depth_at(Side::Sell, p), ref.depth_at(Side::Sell, p));
     }
 }
 
