@@ -68,8 +68,10 @@ def chart(data, op, W, H, L, R, T, B, fs, long=True):
     for k in range(MAX_TICKS + 1):
         p.append(f'<line class="grid" x1="{x(k):.1f}" y1="{T}" x2="{x(k):.1f}" y2="{H - B}"/>')
         p.append(f'<text class="txt" x="{x(k):.1f}" y="{H - B + fs + 5}" text-anchor="middle">{k}</text>')
-        p.append(f'<text class="mut" x="{x(k):.1f}" y="{H - B + 2 * fs + 7}" text-anchor="middle" '
-                 f'font-size="{fs - 2}">{k * TICK_NS:.1f} ns</text>')
+        ns = "0" if k == 0 else f"{k * TICK_NS:.1f}" if long else f"{k * TICK_NS:.0f}"
+        anchor = "end" if k == MAX_TICKS and not long else "middle"
+        p.append(f'<text class="mut" x="{x(k):.1f}" y="{H - B + 2 * fs + 7}" text-anchor="{anchor}" '
+                 f'font-size="{fs - 2}">{ns} ns</text>')
     p.append(f'<line class="ax" x1="{L}" y1="{H - B}" x2="{W - R}" y2="{H - B}"/>')
     p.append(f'<text class="txt" x="{(L + W - R) / 2:.0f}" y="{H - 6}" text-anchor="middle">'
              f'{op} reading, clock ticks at or under</text>')
