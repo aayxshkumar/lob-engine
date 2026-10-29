@@ -19,7 +19,7 @@ L, R, T, B = 64, 24, 24, 56  # margins
 
 SERIES = [
     ("v0_map", "v0: std::map levels", "s0"),
-    ("v1_array", "v1: flat array + bitset", "s1"),
+    ("v2", "v2: arrays + bitset + id table", "s1"),
 ]
 
 
@@ -63,7 +63,7 @@ def main():
     parts = [
         f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {W} {H}" role="img" '
         f'aria-labelledby="t d" font-family="Charter, \'Bitstream Charter\', Cambria, serif" font-size="13">',
-        f"<title id=\"t\">Latency CDF of {op}, v0 vs v1, Apple M4</title>",
+        f"<title id=\"t\">Latency CDF of {op}, v0 vs v2, Apple M4</title>",
         "<desc id=\"d\">Cumulative fraction of operations against latency. Both curves rise in "
         "steps every 41.7 ns because the M4's steady_clock ticks at 24 MHz.</desc>",
         "<style>"

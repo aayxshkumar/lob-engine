@@ -3,9 +3,9 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
-#include <unordered_map>
 #include <vector>
 
+#include "lob/id_table.hpp"
 #include "lob/types.hpp"
 
 namespace lob {
@@ -21,7 +21,8 @@ namespace lob {
 //     so sparse books stay fast too.
 //   - orders live in a pre-allocated pool and are chained per level in an
 //     intrusive doubly linked list, so cancel is O(1) once the order is found
-//   - id -> pool slot lookup through std::unordered_map (next to replace)
+//   - id -> pool slot lookup through IdTable, a flat open-addressing table
+//     sized from the pool (std::unordered_map until v2)
 //
 // v0 (std::map levels) is kept as MapOrderBook for comparison.
 class OrderBook {
@@ -108,7 +109,7 @@ private:
 
     std::vector<Order> pool_;
     std::vector<std::uint32_t> free_;
-    std::unordered_map<OrderId, std::uint32_t> index_;
+    IdTable index_;
 };
 
 }  // namespace lob

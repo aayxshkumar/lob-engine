@@ -7,7 +7,7 @@
 namespace lob {
 
 OrderBook::OrderBook(std::size_t capacity, Price min_price, Price max_price)
-    : min_price_(min_price), max_price_(max_price) {
+    : min_price_(min_price), max_price_(max_price), index_(capacity) {
     if (max_price < min_price) throw std::invalid_argument("max_price < min_price");
     const auto n = static_cast<std::size_t>(max_price - min_price + 1);
     bids_.resize(n);
@@ -20,7 +20,6 @@ OrderBook::OrderBook(std::size_t capacity, Price min_price, Price max_price)
     free_.reserve(capacity);
     // Hand out low slots first so a fresh book touches memory in order.
     for (std::size_t i = capacity; i-- > 0;) free_.push_back(static_cast<std::uint32_t>(i));
-    index_.reserve(capacity);
 }
 
 std::uint32_t OrderBook::alloc_slot() {
@@ -169,7 +168,7 @@ void OrderBook::rest(OrderId id, Side side, Price price, Qty qty) {
     lvl.tail = slot;
     lvl.total += qty;
 
-    index_.emplace(id, slot);
+    index_.insert(id, slot);
 }
 
 void OrderBook::unlink(std::uint32_t slot) {
@@ -189,22 +188,21 @@ void OrderBook::unlink(std::uint32_t slot) {
 }
 
 Result OrderBook::cancel(OrderId id) {
-    auto it = index_.find(id);
-    if (it == index_.end()) return Result::UnknownId;
-    const std::uint32_t slot = it->second;
+    const std::uint32_t slot = index_.find(id);
+    if (slot == IdTable::kEmpty) return Result::UnknownId;
     unlink(slot);
-    index_.erase(it);
+    index_.erase(id);
     free_slot(slot);
     return Result::Ok;
 }
 
 Result OrderBook::modify(OrderId id, Price new_price, Qty new_qty, std::vector<Trade>& trades) {
-    auto it = index_.find(id);
-    if (it == index_.end()) return Result::UnknownId;
+    const std::uint32_t slot = index_.find(id);
+    if (slot == IdTable::kEmpty) return Result::UnknownId;
     if (new_qty == 0) return cancel(id);
     if (!in_range(new_price)) return Result::PriceOutOfRange;
 
-    Order& o = pool_[it->second];
+    Order& o = pool_[slot];
     if (new_price == o.price && new_qty <= o.qty) {
         // Pure size reduction: stay in place, keep priority.
         level(o.side, to_index(o.price)).total -= o.qty - new_qty;

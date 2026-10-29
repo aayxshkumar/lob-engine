@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 360" role="img" aria-labelledby="t d" font-family="Charter, 'Bitstream Charter', Cambria, serif" font-size="13">
-<title id="t">Latency CDF of add_limit, v0 vs v1, Apple M4</title>
+<title id="t">Latency CDF of add_limit, v0 vs v2, Apple M4</title>
 <desc id="d">Cumulative fraction of operations against latency. Both curves rise in steps every 41.7 ns because the M4's steady_clock ticks at 24 MHz.</desc>
 <style>.bg{fill:#fff}.ax{stroke:#111;stroke-width:1}.grid{stroke:#e5e5e5;stroke-width:1}.txt{fill:#111}.mut{fill:#555}.s0{stroke:#B3261E}.s1{stroke:#1F5FA8}.line{fill:none;stroke-width:2}@media (prefers-color-scheme: dark){.bg{fill:#111}.ax{stroke:#e8e8e8}.grid{stroke:#2a2a2a}.txt{fill:#e8e8e8}.mut{fill:#aaa}.s0{stroke:#F2857C}.s1{stroke:#7DB2F0}}</style>
 <rect class="bg" width="720" height="360"/>
@@ -26,10 +26,10 @@
 <line class="ax" x1="64" y1="304" x2="696" y2="304"/>
 <line class="ax" x1="64" y1="24" x2="64" y2="304"/>
 <text class="txt" x="380" y="346" text-anchor="middle">add_limit latency, ns (gridlines = one 41.7 ns clock tick)</text>
-<path class="line s0" d="M64.0,304.0H64.0V262.8H208.0V192.0H211.5V50.6H355.4V34.9H358.9V27.1H502.9V24.8H650.4V24.6H696.0"/>
+<path class="line s0" d="M64.0,304.0H64.0V258.1H208.0V187.8H211.5V47.5H355.4V33.5H358.9V26.8H502.9V24.8H650.4V24.6H696.0"/>
 <line class="line s0" x1="486" y1="36" x2="510" y2="36"/>
 <text class="txt" x="516" y="40">v0: std::map levels</text>
-<path class="line s1" d="M64.0,304.0H64.0V208.5H208.0V148.9H211.5V29.9H355.4V26.8H358.9V25.1H502.9V24.3H696.0"/>
+<path class="line s1" d="M64.0,304.0H64.0V148.6H208.0V111.1H211.5V35.5H355.4V28.5H358.9V24.8H502.9V24.3H696.0"/>
 <line class="line s1" x1="486" y1="56" x2="510" y2="56"/>
-<text class="txt" x="516" y="60">v1: flat array + bitset</text>
+<text class="txt" x="516" y="60">v2: arrays + bitset + id table</text>
 </svg>

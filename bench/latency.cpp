@@ -135,8 +135,11 @@ int main(int argc, char** argv) {
                     res);
     std::printf("\n");
 
-    run<MapOrderBook>("v0 MapOrderBook (std::map levels)", "v0_map", ops, cfg.ops, csv);
-    run<OrderBook>("v1 OrderBook (flat array + bitset levels)", "v1_array", ops, cfg.ops, csv);
+    // The workload peaks at ~109k live orders; size both books for 256k so the
+    // id table is not sized for (and spread across) a million slots.
+    constexpr std::size_t kCapacity = 1 << 18;
+    run<MapOrderBook>("v0 MapOrderBook (std::map levels)", "v0_map", ops, kCapacity, csv);
+    run<OrderBook>("v2 OrderBook (array + bitset levels, open-addressing id table)", "v2", ops, kCapacity, csv);
     if (csv) std::fclose(csv);
     return EXIT_SUCCESS;
 }

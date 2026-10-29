@@ -36,7 +36,7 @@ if(LOB_BUILD_TESTS)
   FetchContent_MakeAvailable(googletest)
 
   enable_testing()
-  add_executable(lob_tests tests/order_book_test.cpp)
+  add_executable(lob_tests tests/order_book_test.cpp tests/id_table_test.cpp)
   target_link_libraries(lob_tests PRIVATE lob GTest::gtest_main)
   include(GoogleTest)
   # PRE_TEST: sanitizer builds start slowly and can trip the build-time discovery timeout.

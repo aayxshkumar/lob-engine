@@ -3,7 +3,7 @@
 // Deterministic synthetic order flow shared by the benchmarks.
 //
 // Rough shape of real books: most messages are adds and cancels near the top
-// of book, a minority cross the spread. Week 2 replaces this with replayed
+// of book, a minority cross the spread. tools/replay replays recorded
 // Binance depth data; keep this generator for reproducible comparisons.
 
 #include <cstdint>
@@ -31,7 +31,22 @@ struct WorkloadConfig {
     double cancel_ratio = 0.40;
     double market_ratio = 0.05;
     std::uint64_t seed = 7;
+    // Sequential ids (1, 2, 3...) are kind to any hash table. Real venues
+    // send ids that look random, so benchmarks also run with ids scrambled
+    // by a bijective mixer (still unique).
+    bool random_ids = false;
+    // Book capacity for benchmarks; 0 means one slot per op (always enough).
+    // The workload peaks at about 109k live orders.
+    std::size_t capacity = 0;
 };
+
+// splitmix64 finalizer: a bijection on 64-bit integers.
+inline std::uint64_t scramble(std::uint64_t x) {
+    x += 0x9E3779B97F4A7C15ull;
+    x = (x ^ (x >> 30)) * 0xBF58476D1CE4E5B9ull;
+    x = (x ^ (x >> 27)) * 0x94D049BB133111EBull;
+    return x ^ (x >> 31);
+}
 
 inline std::vector<Op> make_workload(const WorkloadConfig& cfg) {
     std::mt19937_64 rng(cfg.seed);
@@ -43,7 +58,8 @@ inline std::vector<Op> make_workload(const WorkloadConfig& cfg) {
     ops.reserve(cfg.ops);
     std::vector<OrderId> live;
     live.reserve(cfg.ops);
-    OrderId next = 1;
+    OrderId seq = 1;
+    auto next_id = [&] { const OrderId id = seq++; return cfg.random_ids ? scramble(id) : id; };
 
     for (std::size_t i = 0; i < cfg.ops; ++i) {
         const double r = u(rng);
@@ -54,15 +70,16 @@ inline std::vector<Op> make_workload(const WorkloadConfig& cfg) {
             live[k] = live.back();
             live.pop_back();
         } else if (r < cfg.cancel_ratio + cfg.market_ratio) {
-            ops.push_back({OpType::Market, side, next++, 0, static_cast<Qty>(qty(rng))});
+            ops.push_back({OpType::Market, side, next_id(), 0, static_cast<Qty>(qty(rng))});
         } else {
             // Mostly passive: buys below mid, sells above, with occasional crossing.
             const int off = offset(rng);
             const bool aggressive = u(rng) < 0.1;
             const Price px = side == Side::Buy ? cfg.mid + (aggressive ? off : -off)
                                                : cfg.mid + (aggressive ? -off : off);
-            ops.push_back({OpType::Add, side, next, px, static_cast<Qty>(qty(rng))});
-            live.push_back(next++);
+            const OrderId id = next_id();
+            ops.push_back({OpType::Add, side, id, px, static_cast<Qty>(qty(rng))});
+            live.push_back(id);
         }
     }
     return ops;

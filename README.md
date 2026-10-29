@@ -1,25 +1,35 @@
 # lob-engine
 
-A limit order book and matching engine in C++20. Replacing `std::map` price levels with flat arrays and a bitset took the mixed workload from **20.1M to 34.0M ops/s (1.69×)**. The same differential test checks both versions, and it catches every bug I've planted on purpose.
+A limit order book and matching engine in C++20. Two measured steps took the mixed workload from **21.2M to 67.5M ops/s (3.2×)**: flat price-level arrays with a bitset (v1), then an open-addressing id table in place of `std::unordered_map` (v2). The same differential test checks every version, and it catches every bug I've planted on purpose.
 
 ```bash
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build -j
 ./build/lob_tests && ./build/lob_bench && ./build/lob_latency
 ```
 
-## Results: v0 (`std::map`) vs v1 (flat array + bitset)
+## Results
 
-Apple M4, macOS 26, Apple clang 17, `-O3`, median of 3 repetitions. Synthetic workload with a fixed seed: 55% limit adds within ±50 ticks of mid (10% of them crossing), 40% cancels, 5% market orders. Both versions are in this repo, and `lob_bench` runs them side by side.
+Apple M4, macOS 26, Apple clang 17, `-O3`, median of 3 repetitions. Synthetic workload with a fixed seed: 55% limit adds within ±50 ticks of mid (10% of them crossing), 40% cancels, 5% market orders. It peaks at about 109k live orders, and books are sized for 256k unless noted. v0 (`MapOrderBook`) and the current book are both in this repo, and `lob_bench` runs them side by side; v1 numbers are from commit `536cb05`.
 
-| Benchmark | v0 `MapOrderBook` | v1 `OrderBook` | Change |
-|---|---|---|---|
-| Mixed workload, 1M ops | 20.1M ops/s | **34.0M ops/s** | 1.69× |
-| Mixed workload, 100k ops | 24.2M ops/s | 40.7M ops/s | 1.68× |
-| Passive adds, 100k | 35.2M ops/s | 39.5M ops/s | 1.12× |
-| Add + cancel, warm book | 32.5 ns | 28.5 ns | 1.14× |
-| Sparse book, 1,000-tick gaps | 2.0 µs | 1.85 µs | 1.08× |
+| Benchmark | v0 `std::map` | v1 arrays + bitset | v2 + id table | v0 → v2 |
+|---|---|---|---|---|
+| Mixed workload, 1M ops | 21.2M ops/s | 34.3M ops/s | **67.5M ops/s** | 3.2× |
+| Same, random-looking order ids | 20.0M ops/s | 30.4M ops/s | **60.1M ops/s** | 3.0× |
+| Passive adds, 100k | 35.6M ops/s | 39.5M ops/s | 158M ops/s | 4.4× |
+| Add + cancel, warm book | 32.6 ns | 28.5 ns | **8.6 ns** | 3.8× |
+| Sparse book, 1,000-tick gaps | 2.0 µs | 1.85 µs | 1.28 µs | 1.6× |
 
-### The step that made it worse first
+### v2: the id table, and the benchmark that flattered `std::unordered_map`
+
+Every add, cancel and fill looks an order up by id. After v1, that lookup was the largest cost left: `std::unordered_map` allocates a node per order, and each lookup follows a bucket pointer and then a node pointer.
+
+Before replacing it I made the benchmark harder. The generator handed out ids 1, 2, 3…, which is unusually kind to `unordered_map`: consecutive ids land in consecutive buckets, and nodes allocated in order sit next to each other in memory. Real venues send ids that look random. Scrambling the same ids with a bijective mixer cost v1 25% (34.4M → 25.7M ops/s, book sized for 1M), all of it in the map.
+
+[`IdTable`](include/lob/id_table.hpp) is a flat array of 16-byte `{id, slot}` entries with linear probing, at most half full, using Fibonacci hashing (one multiply). Deletes use backward shift rather than tombstones, so a long-running book doesn't fill up with dead entries. Its capacity is fixed by the order pool, so it never rehashes.
+
+The catch is that a fixed table's memory follows the configured capacity, not the live order count. Sized for 1M orders it's 32 MB, which doesn't fit in cache, and with sequential ids the gain disappears (34.4M → 34.4M). Sized to the workload (256k slots, 8 MB) it's 1.9× on both kinds of id. So size the book for the peak you expect, not the largest number you can think of.
+
+### v1: the step that made it worse first
 
 Flat arrays alone weren't a clear win. When the best level empties, the next one has to be found, and the first v1 walked the array one level at a time. The sparse-book benchmark exposed two problems with that:
 
@@ -37,29 +47,33 @@ The fix for real gaps is one bit per price level. Finding the next non-empty lev
 
 On Apple Silicon `steady_clock` ticks every ~41.7 ns, so every sample below is a whole number of ticks; the tool detects this and says so. Treat these as tick counts. Precise nanosecond percentiles will come from Linux runs.
 
-| `lob_latency`, 1M ops | v0 p99 | v1 p99 | v0 p99.9 | v1 p99.9 |
+| `lob_latency`, 1M ops | v0 p99 | v2 p99 | v0 p99.9 | v2 p99.9 |
 |---|---|---|---|---|
-| add_limit | 3 ticks (125 ns) | **2 ticks (84 ns)** | 15 ticks | **3 ticks** |
-| cancel | 5 ticks (208 ns) | **2 ticks (84 ns)** | 8 ticks | 5 ticks |
+| add_limit | 2 ticks | 2 ticks | 14 ticks | **3 ticks** |
+| cancel | 3 ticks | **2 ticks** | 6 ticks | **3 ticks** |
+
+The CDFs are in [`docs/`](docs), plotted from [`m4-quantiles.csv`](docs/m4-quantiles.csv) by `tools/plot_cdf.py`.
 
 ## Correctness
 
-- **Every test runs against both books.** The test suites are typed: the same 22 tests run on `OrderBook` and `MapOrderBook`, plus 3 tests specific to the array (price-band edges, out-of-range rejection, finding the next best price across gaps). 47 tests in total.
+- **Every test runs against both books.** The test suites are typed: the same 22 tests run on `OrderBook` and `MapOrderBook`, plus 3 tests specific to the array (price-band edges, out-of-range rejection, finding the next best price across gaps) and 4 for the id table. 51 tests in total.
 - **Differential test:** 20,000 random operations (adds, cancels, three kinds of modify, market orders) go through each book and a deliberately naive [`ReferenceBook`](tests/reference_book.hpp). After every step, trades and book state must match exactly.
-- **Mutation-checked:** I planted 12 bugs by hand and the tests caught all 12.
+- **Id table differential test:** 20 seeds × 20,000 inserts and erases against `std::unordered_map`, in a 16-entry table so probe runs are long and wrap past the end of the array, which is where backward-shift bugs hide.
+- **Mutation-checked:** I planted 16 bugs by hand and the tests caught all 16.
   - Matching rules: priority kept on a size increase, market orders obeying a limit, trades at the taker's price, crossing one tick early, a stale level total.
   - Array book: a skipped rescan (it hangs, which the run's time limit catches), a rescan that skips a level, a new best bid ignored, a level count that never drops.
   - Bitset: a mask off by one, a search starting one level too far, a bit never cleared.
+  - Id table: erase without the backward shift, a shift that ignores wrap-around, an off-by-one in the "can this entry stay" test, a shift that stops after one move. (A fifth mutant survived, but it was equivalent: swapping the empty check and the key check can't change the result, because an empty entry's value is already the "absent" marker.)
 - **CI:** GCC and Clang on Ubuntu, tests under AddressSanitizer and UndefinedBehaviorSanitizer, and UBSan on macOS.
 
 ## Design
 
-| Piece | v1 choice | Why |
+| Piece | Choice | Why |
 |---|---|---|
 | Price levels | Two flat arrays (bids, asks) indexed by tick offset | Real exchanges enforce price bands. Indexing is one subtraction, with no tree to walk |
 | Next best level | A bitset of non-empty levels, scanned with `countr_zero` / `countl_zero` | Checks 64 levels per step, so sparse books stay fast |
 | Orders | Pre-allocated pool, intrusive doubly linked list per level | No allocation per order, and O(1) cancel |
-| id → order | `std::unordered_map` | **Next to replace:** it's now the main remaining cost on cancel |
+| id → order | Open addressing, linear probing, ≤50% load, backward-shift delete | One hash and usually one cache line, with no allocation per order. Memory is fixed by capacity |
 | Trades | Appended to a caller-owned vector | No allocation once it has warmed up |
 
 Trade-offs: a 65,536-tick price band costs about 1.5 MB of level arrays per book, and prices outside the band are rejected (`Result::PriceOutOfRange`). Not handled yet: self-trade prevention, IOC/FOK, multiple instruments.
@@ -68,7 +82,7 @@ Trade-offs: a 65,536-tick price band costs about 1.5 MB of level arrays per book
 
 - [x] Order book core, typed tests, differential test, mutation checks, CI
 - [x] **v1:** flat price-level arrays + bitset (1.69× on the mixed workload)
-- [ ] Open-addressing id table to replace `unordered_map`
+- [x] **v2:** open-addressing id table (1.9× over v1 on the mixed workload)
 - [ ] Binance depth feed: record to binary, replay through the book, publish results on real data
 - [ ] Linux runs with a TSC-based timer for nanosecond percentiles, plus `perf stat` cache-miss numbers
 - [ ] SPSC ring buffer between feed and engine threads, with ThreadSanitizer in CI and `rigtorp/SPSCQueue` as the baseline
@@ -77,7 +91,7 @@ Trade-offs: a 65,536-tick price band costs about 1.5 MB of level arrays per book
 ## Layout
 
 ```
-include/lob/   order_book.hpp (v1), map_order_book.hpp (v0 baseline), types.hpp
+include/lob/   order_book.hpp, id_table.hpp, map_order_book.hpp (v0 baseline), types.hpp
 src/           implementations
 tests/         typed GoogleTest suites, reference_book.hpp (test oracle)
 bench/         workload generator, throughput benchmarks, latency percentiles

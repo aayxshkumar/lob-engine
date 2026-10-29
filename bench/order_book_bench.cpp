@@ -22,17 +22,19 @@ void apply(B& book, const Op& op, std::vector<Trade>& trades) {
 }
 
 // Full mixed workload: adds, cancels, crossing orders and market orders.
-template <typename B>
+template <typename B, bool RandomIds = false>
 void BM_MixedWorkload(benchmark::State& state) {
     WorkloadConfig cfg;
     cfg.ops = static_cast<std::size_t>(state.range(0));
+    cfg.random_ids = RandomIds;
+    cfg.capacity = static_cast<std::size_t>(state.range(1));
     const auto ops = make_workload(cfg);
     std::vector<Trade> trades;
     trades.reserve(1024);
 
     for (auto _ : state) {
         state.PauseTiming();
-        B book{cfg.ops};
+        B book{cfg.capacity ? cfg.capacity : cfg.ops};
         state.ResumeTiming();
         for (const Op& op : ops) {
             apply(book, op, trades);
@@ -42,8 +44,10 @@ void BM_MixedWorkload(benchmark::State& state) {
     }
     state.SetItemsProcessed(static_cast<std::int64_t>(state.iterations()) * state.range(0));
 }
-BENCHMARK_TEMPLATE(BM_MixedWorkload, MapOrderBook)->Name("v0_map/mixed")->Arg(100'000)->Arg(1'000'000)->Unit(benchmark::kMillisecond);
-BENCHMARK_TEMPLATE(BM_MixedWorkload, OrderBook)->Name("v1_array/mixed")->Arg(100'000)->Arg(1'000'000)->Unit(benchmark::kMillisecond);
+BENCHMARK_TEMPLATE(BM_MixedWorkload, MapOrderBook)->Name("v0_map/mixed")->Args({100'000, 0})->Args({1'000'000, 0})->Args({1'000'000, 1 << 18})->Unit(benchmark::kMillisecond);
+BENCHMARK_TEMPLATE(BM_MixedWorkload, OrderBook)->Name("v2/mixed")->Args({100'000, 0})->Args({1'000'000, 0})->Args({1'000'000, 1 << 18})->Unit(benchmark::kMillisecond);
+BENCHMARK_TEMPLATE(BM_MixedWorkload, MapOrderBook, true)->Name("v0_map/mixed_random_ids")->Args({1'000'000, 0})->Args({1'000'000, 1 << 18})->Unit(benchmark::kMillisecond);
+BENCHMARK_TEMPLATE(BM_MixedWorkload, OrderBook, true)->Name("v2/mixed_random_ids")->Args({1'000'000, 0})->Args({1'000'000, 1 << 18})->Unit(benchmark::kMillisecond);
 
 // Passive adds only (no matching): isolates level lookup + insert cost.
 template <typename B>
@@ -64,7 +68,7 @@ void BM_AddPassive(benchmark::State& state) {
     state.SetItemsProcessed(static_cast<std::int64_t>(state.iterations()) * state.range(0));
 }
 BENCHMARK_TEMPLATE(BM_AddPassive, MapOrderBook)->Name("v0_map/add_passive")->Arg(100'000)->Unit(benchmark::kMillisecond);
-BENCHMARK_TEMPLATE(BM_AddPassive, OrderBook)->Name("v1_array/add_passive")->Arg(100'000)->Unit(benchmark::kMillisecond);
+BENCHMARK_TEMPLATE(BM_AddPassive, OrderBook)->Name("v2/add_passive")->Arg(100'000)->Unit(benchmark::kMillisecond);
 
 // Add then cancel the same order: the hot path for quote updates.
 template <typename B>
@@ -82,7 +86,7 @@ void BM_AddCancel(benchmark::State& state) {
     state.SetItemsProcessed(state.iterations() * 2);
 }
 BENCHMARK_TEMPLATE(BM_AddCancel, MapOrderBook)->Name("v0_map/add_cancel");
-BENCHMARK_TEMPLATE(BM_AddCancel, OrderBook)->Name("v1_array/add_cancel");
+BENCHMARK_TEMPLATE(BM_AddCancel, OrderBook)->Name("v2/add_cancel");
 
 // Worst case for flat arrays: a sparse book. Asks sit `gap` ticks apart and a
 // market order clears the best one each time, so the array version has to
@@ -107,7 +111,7 @@ void BM_SparseSweep(benchmark::State& state) {
     state.SetItemsProcessed(static_cast<std::int64_t>(state.iterations()) * kLevels);
 }
 BENCHMARK_TEMPLATE(BM_SparseSweep, MapOrderBook)->Name("v0_map/sparse_sweep")->Arg(1)->Arg(100)->Arg(1'000);
-BENCHMARK_TEMPLATE(BM_SparseSweep, OrderBook)->Name("v1_array/sparse_sweep")->Arg(1)->Arg(100)->Arg(1'000);
+BENCHMARK_TEMPLATE(BM_SparseSweep, OrderBook)->Name("v2/sparse_sweep")->Arg(1)->Arg(100)->Arg(1'000);
 
 }  // namespace
 
