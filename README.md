@@ -132,7 +132,7 @@ tests/         typed GoogleTest suites, reference_book.hpp (test oracle)
 bench/         workload generator, throughput benchmarks, latency percentiles, replay
 bench/results/ raw output of tools/run_bench.sh, one folder per run (commit, machine, JSON)
 tools/         record_binance.py (stdlib-only recorder), make_test_recording.py, run_bench.sh,
-               plot_cdf.py and plot_throughput.py (the charts in docs/)
+               plot_cdf.py, plot_throughput.py and plot_depth.py (the images in docs/)
 ```
 
 MIT licensed.
