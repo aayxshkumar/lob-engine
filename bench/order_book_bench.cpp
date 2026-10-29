@@ -3,6 +3,9 @@
 
 #include <benchmark/benchmark.h>
 
+#include <chrono>
+#include <optional>
+
 #include "lob/map_order_book.hpp"
 #include "lob/order_book.hpp"
 #include "workload.hpp"
@@ -22,28 +25,34 @@ void apply(B& book, const Op& op, std::vector<Trade>& trades) {
 }
 
 // Full mixed workload: adds, cancels, crossing orders and market orders.
-template <typename B>
+template <typename B, bool RandomIds = false>
 void BM_MixedWorkload(benchmark::State& state) {
     WorkloadConfig cfg;
     cfg.ops = static_cast<std::size_t>(state.range(0));
+    cfg.random_ids = RandomIds;
+    cfg.capacity = static_cast<std::size_t>(state.range(1));
     const auto ops = make_workload(cfg);
     std::vector<Trade> trades;
     trades.reserve(1024);
 
+    std::optional<B> book;
     for (auto _ : state) {
         state.PauseTiming();
-        B book{cfg.ops};
+        book.reset();  // the last book's destructor runs untimed
+        book.emplace(cfg.capacity ? cfg.capacity : cfg.ops);
         state.ResumeTiming();
         for (const Op& op : ops) {
-            apply(book, op, trades);
+            apply(*book, op, trades);
             trades.clear();
         }
-        benchmark::DoNotOptimize(book.best_bid());
+        benchmark::DoNotOptimize(book->best_bid());
     }
     state.SetItemsProcessed(static_cast<std::int64_t>(state.iterations()) * state.range(0));
 }
-BENCHMARK_TEMPLATE(BM_MixedWorkload, MapOrderBook)->Name("v0_map/mixed")->Arg(100'000)->Arg(1'000'000)->Unit(benchmark::kMillisecond);
-BENCHMARK_TEMPLATE(BM_MixedWorkload, OrderBook)->Name("v1_array/mixed")->Arg(100'000)->Arg(1'000'000)->Unit(benchmark::kMillisecond);
+BENCHMARK_TEMPLATE(BM_MixedWorkload, MapOrderBook)->Name("v0_map/mixed")->Args({100'000, 0})->Args({1'000'000, 0})->Args({1'000'000, 1 << 18})->Unit(benchmark::kMillisecond);
+BENCHMARK_TEMPLATE(BM_MixedWorkload, OrderBook)->Name("v1_array/mixed")->Args({100'000, 0})->Args({1'000'000, 0})->Args({1'000'000, 1 << 18})->Unit(benchmark::kMillisecond);
+BENCHMARK_TEMPLATE(BM_MixedWorkload, MapOrderBook, true)->Name("v0_map/mixed_random_ids")->Args({1'000'000, 0})->Args({1'000'000, 1 << 18})->Unit(benchmark::kMillisecond);
+BENCHMARK_TEMPLATE(BM_MixedWorkload, OrderBook, true)->Name("v1_array/mixed_random_ids")->Args({1'000'000, 0})->Args({1'000'000, 1 << 18})->Unit(benchmark::kMillisecond);
 
 // Passive adds only (no matching): isolates level lookup + insert cost.
 template <typename B>
@@ -96,18 +105,22 @@ void BM_SparseSweep(benchmark::State& state) {
     trades.reserve(16);
     OrderId id = 1;
     for (auto _ : state) {
-        state.PauseTiming();
         B book{1024};
         for (int i = 0; i < kLevels; ++i) book.add_limit(id++, Side::Sell, 1'000 + i * gap, 1, trades);
-        state.ResumeTiming();
+        // Time only the sweep: a PauseTiming/ResumeTiming pair costs ~0.4 us on an M4, about as much
+        // as the sweep, and the array book's destructor runs after the clock stops. Each sweep is
+        // 10-40 clock ticks; the call's phase against the clock is random, so the mean is unbiased.
+        const auto t0 = std::chrono::steady_clock::now();
         for (int i = 0; i < kLevels; ++i) book.add_market(id++, Side::Buy, 1, trades);
-        trades.clear();
         benchmark::DoNotOptimize(book.best_ask());
+        const auto t1 = std::chrono::steady_clock::now();
+        state.SetIterationTime(std::chrono::duration<double>(t1 - t0).count());
+        trades.clear();
     }
     state.SetItemsProcessed(static_cast<std::int64_t>(state.iterations()) * kLevels);
 }
-BENCHMARK_TEMPLATE(BM_SparseSweep, MapOrderBook)->Name("v0_map/sparse_sweep")->Arg(1)->Arg(100)->Arg(1'000);
-BENCHMARK_TEMPLATE(BM_SparseSweep, OrderBook)->Name("v1_array/sparse_sweep")->Arg(1)->Arg(100)->Arg(1'000);
+BENCHMARK_TEMPLATE(BM_SparseSweep, MapOrderBook)->Name("v0_map/sparse_sweep")->Arg(1)->Arg(100)->Arg(1'000)->UseManualTime();
+BENCHMARK_TEMPLATE(BM_SparseSweep, OrderBook)->Name("v1_array/sparse_sweep")->Arg(1)->Arg(100)->Arg(1'000)->UseManualTime();
 
 }  // namespace
 
