@@ -32,6 +32,10 @@ jobs:
         run: cmake --build build -j 4
       - name: Test
         run: ctest --test-dir build --output-on-failure
+      - name: Replay a synthetic recording (strict top-of-book check)
+        run: |
+          python3 tools/make_test_recording.py build/synthetic.lobrec 5000
+          ./build/lob_replay build/synthetic.lobrec --strict
       - name: Latency smoke run
         if: matrix.name == 'linux-clang-release'
         run: ./build/lob_latency 200000

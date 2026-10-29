@@ -11,7 +11,8 @@ if(NOT CMAKE_BUILD_TYPE)
 endif()
 
 option(LOB_BUILD_TESTS "Build unit tests" ON)
-option(LOB_BUILD_BENCH "Build benchmarks" ON)
+option(LOB_BUILD_BENCH "Build Google Benchmark throughput benchmarks" ON)
+option(LOB_BUILD_TOOLS "Build lob_latency and lob_replay (no extra dependencies)" ON)
 # e.g. -DLOB_SANITIZERS=address,undefined (CI on Linux) or =undefined.
 # AddressSanitizer currently hangs at startup on macOS 26 with Apple clang 17,
 # so run ASan on Linux.
@@ -53,7 +54,13 @@ if(LOB_BUILD_BENCH)
 
   add_executable(lob_bench bench/order_book_bench.cpp)
   target_link_libraries(lob_bench PRIVATE lob benchmark::benchmark)
+endif()
 
+if(LOB_BUILD_TOOLS)
   add_executable(lob_latency bench/latency.cpp)
   target_link_libraries(lob_latency PRIVATE lob)
+
+  add_executable(lob_replay bench/replay.cpp)
+  target_link_libraries(lob_replay PRIVATE lob)
+  target_compile_options(lob_replay PRIVATE -Wall -Wextra -Wpedantic -Werror)
 endif()

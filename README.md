@@ -1,6 +1,6 @@
 # lob-engine
 
-A limit order book and matching engine in C++20. Two measured steps took the mixed workload from **21.2M to 67.5M ops/s (3.2×)**: flat price-level arrays with a bitset (v1), then an open-addressing id table in place of `std::unordered_map` (v2). The same differential test checks every version, and it catches every bug I've planted on purpose.
+A limit order book and matching engine in C++20. Two measured steps took the mixed workload from **21.2M to 67.5M ops/s (3.2×)**: flat price-level arrays with a bitset (v1), then an open-addressing id table in place of `std::unordered_map` (v2). On 20 minutes of real Binance BTCUSDT order flow, v2 is **5.2× faster** than the `std::map` version. The same differential test checks every version, and it catches every bug I've planted on purpose.
 
 ```bash
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build -j
@@ -27,7 +27,7 @@ Before replacing it I made the benchmark harder. The generator handed out ids 1,
 
 [`IdTable`](include/lob/id_table.hpp) is a flat array of 16-byte `{id, slot}` entries with linear probing, at most half full, using Fibonacci hashing (one multiply). Deletes use backward shift rather than tombstones, so a long-running book doesn't fill up with dead entries. Its capacity is fixed by the order pool, so it never rehashes.
 
-The catch is that a fixed table's memory follows the configured capacity, not the live order count. Sized for 1M orders it's 32 MB, which doesn't fit in cache, and with sequential ids the gain disappears (34.4M → 34.4M). Sized to the workload (256k slots, 8 MB) it's 1.9× on both kinds of id. So size the book for the peak you expect, not the largest number you can think of.
+The catch is that a fixed table's memory follows the configured capacity, not the live order count. Sized for 1M orders it's 32 MB, which doesn't fit in cache, and with sequential ids the gain disappears (34.4M → 34.4M). Sized to the workload (256k slots, 8 MB) it's about 2× on both kinds of id. So size the book for the peak you expect, not the largest number you can think of.
 
 ### v1: the step that made it worse first
 
@@ -54,6 +54,38 @@ On Apple Silicon `steady_clock` ticks every ~41.7 ns, so every sample below is a
 
 The CDFs are in [`docs/`](docs), plotted from [`m4-quantiles.csv`](docs/m4-quantiles.csv) by `tools/plot_cdf.py`.
 
+## On real data: 20 minutes of Binance BTCUSDT
+
+[`tools/record_binance.py`](tools/record_binance.py) records Binance's public depth-diff and trade streams using only the Python standard library. It follows Binance's procedure for keeping a local book (buffer the diffs, take a REST snapshot, drop what the snapshot already covers), and it stops on any sequence gap rather than record a book that disagrees with the exchange.
+
+Binance publishes price levels, not individual orders, so [`lob_replay`](bench/replay.cpp) translates the recording into order operations:
+
+- a level that grows gets a new resting order for the difference;
+- a level that shrinks loses size from its newest orders first;
+- a trade becomes a taker order at the trade price, so it fills the oldest orders, and any remainder is cancelled;
+- within one diff message, reductions are applied before additions.
+
+After every diff message it compares the book's top 10 levels on each side with the exchange's.
+
+Recorded on 29 October 2026, 02:30–02:50 UTC: 11,992 diff messages (544,092 level updates) and 71,328 trades. The 65,536-tick price band (±$327 around $79,900) skipped 44,015 updates to levels further out.
+
+| Replay | |
+|---|---|
+| Order operations | 562,850: 53.5% adds, 40.3% cancels, 6.2% size reductions |
+| Peak resting orders | 4,203 |
+| Top 10 levels match the exchange | after 99.93% of diff messages (100% with trades left out) |
+| v0 `std::map`, median of 5 | 15.9M ops/s |
+| v2, median of 5 | **81.9M ops/s (5.2×)** |
+
+The 0.07% comes from the two streams, not the book. Binance doesn't sequence trades against depth diffs, so a trade can arrive after the diff that already includes it, and the book takes that size twice until the next diff for the level corrects it. Replaying the same recording without trades matches after every message.
+
+Caveats: the order ids are invented, queue positions are inferred from level sizes, and a book of 4,203 orders fits in cache, so this says little about a much deeper book. Recordings aren't committed (`data/` is git-ignored). To make your own:
+
+```bash
+python3 tools/record_binance.py BTCUSDT 1200 data/btcusdt.lobrec
+./build/lob_replay data/btcusdt.lobrec
+```
+
 ## Correctness
 
 - **Every test runs against both books.** The test suites are typed: the same 22 tests run on `OrderBook` and `MapOrderBook`, plus 3 tests specific to the array (price-band edges, out-of-range rejection, finding the next best price across gaps) and 4 for the id table. 51 tests in total.
@@ -64,7 +96,8 @@ The CDFs are in [`docs/`](docs), plotted from [`m4-quantiles.csv`](docs/m4-quant
   - Array book: a skipped rescan (it hangs, which the run's time limit catches), a rescan that skips a level, a new best bid ignored, a level count that never drops.
   - Bitset: a mask off by one, a search starting one level too far, a bit never cleared.
   - Id table: erase without the backward shift, a shift that ignores wrap-around, an off-by-one in the "can this entry stay" test, a shift that stops after one move. (A fifth mutant survived, but it was equivalent: swapping the empty check and the key check can't change the result, because an empty entry's value is already the "absent" marker.)
-- **CI:** GCC and Clang on Ubuntu, tests under AddressSanitizer and UndefinedBehaviorSanitizer, and UBSan on macOS.
+- **Replay check:** `lob_replay --strict` replays a synthetic recording (`tools/make_test_recording.py`) and fails unless both books end identical and the top 10 levels per side match the recording after every message. It caught a real translation bug: a message that clears an ask and adds a bid at the same price must apply the reduction first, or the bid crosses the stale ask and invents a trade.
+- **CI:** GCC and Clang on Ubuntu, tests and the strict replay under AddressSanitizer and UndefinedBehaviorSanitizer, and UBSan on macOS.
 
 ## Design
 
@@ -82,8 +115,8 @@ Trade-offs: a 65,536-tick price band costs about 1.5 MB of level arrays per book
 
 - [x] Order book core, typed tests, differential test, mutation checks, CI
 - [x] **v1:** flat price-level arrays + bitset (1.69× on the mixed workload)
-- [x] **v2:** open-addressing id table (1.9× over v1 on the mixed workload)
-- [ ] Binance depth feed: record to binary, replay through the book, publish results on real data
+- [x] **v2:** open-addressing id table (about 2× over v1 on the mixed workload)
+- [x] Binance depth feed: record to binary, replay through the book (5.2× over v0 on 20 minutes of BTCUSDT)
 - [ ] Linux runs with a TSC-based timer for nanosecond percentiles, plus `perf stat` cache-miss numbers
 - [ ] SPSC ring buffer between feed and engine threads, with ThreadSanitizer in CI and `rigtorp/SPSCQueue` as the baseline
 - [ ] Market-making strategy on replayed data
@@ -94,7 +127,8 @@ Trade-offs: a 65,536-tick price band costs about 1.5 MB of level arrays per book
 include/lob/   order_book.hpp, id_table.hpp, map_order_book.hpp (v0 baseline), types.hpp
 src/           implementations
 tests/         typed GoogleTest suites, reference_book.hpp (test oracle)
-bench/         workload generator, throughput benchmarks, latency percentiles
+bench/         workload generator, throughput benchmarks, latency percentiles, replay
+tools/         record_binance.py (stdlib-only recorder), make_test_recording.py, plot_cdf.py
 ```
 
 MIT licensed.
