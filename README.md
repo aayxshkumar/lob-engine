@@ -114,7 +114,7 @@ Trade-offs: a 65,536-tick price band costs about 1.5 MB of level arrays per book
 ## Roadmap
 
 - [x] Order book core, typed tests, differential test, mutation checks, CI
-- [x] **v1:** flat price-level arrays + bitset (1.69× on the mixed workload)
+- [x] **v1:** flat price-level arrays + bitset (1.6× on the mixed workload)
 - [x] **v2:** open-addressing id table (about 2× over v1 on the mixed workload)
 - [x] Binance depth feed: record to binary, replay through the book (5.2× over v0 on 20 minutes of BTCUSDT)
 - [ ] Linux runs with a TSC-based timer for nanosecond percentiles, plus `perf stat` cache-miss numbers
