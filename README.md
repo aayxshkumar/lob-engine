@@ -1,5 +1,7 @@
 # lob-engine
 
+[![ci](https://github.com/aayxshkumar/lob-engine/actions/workflows/ci.yml/badge.svg)](https://github.com/aayxshkumar/lob-engine/actions/workflows/ci.yml)
+
 A limit order book and matching engine in C++20. Two measured steps took the mixed workload from **20.9M to 65.2M ops/s (3.1×)**: flat price-level arrays with a bitset (v1), then an open-addressing id table in place of `std::unordered_map` (v2). On 20 minutes of real Binance BTCUSDT order flow, v2 is 5.4× faster than the `std::map` version, but the replayed book peaks at 4,203 live orders and fits in cache. The same tests check every version; 16 bugs were planted to test them, and the tests caught all 16.
 
 <picture><source media="(prefers-color-scheme: dark)" srcset="docs/throughput-dark.svg"><img src="docs/throughput-light.svg" width="880" height="414" alt="Throughput, million ops/s, Apple M4, one thread. Synthetic mixed workload: std::map 20.9M, arrays + bitset 35.7M, id table 65.2M. 20 minutes of Binance BTCUSDT replayed, a small book that fits in cache: std::map 14.7M, id table 79.4M."></picture>
