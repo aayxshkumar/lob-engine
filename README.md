@@ -141,6 +141,6 @@ tools/         record_binance.py (stdlib-only recorder), make_test_recording.py,
 
 ## How it was built
 
-I directed this project and built it with Claude Code. Every commit carries a `Co-Authored-By: Claude` trailer. How I use it is on my [colophon](https://aayxshkumar.github.io/colophon.html#ai).
+I directed this project and built it with Claude Code. How I use it is on my [colophon](https://aayxshkumar.github.io/colophon.html#ai).
 
 MIT licensed.
